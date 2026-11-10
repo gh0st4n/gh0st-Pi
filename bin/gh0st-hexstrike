@@ -1,0 +1,56 @@
+#!/bin/sh
+# gh0st-pi-managed  (penanda utk uninstall.sh; jangan dihapus)
+#
+# gh0st-hexstrike - jalankan HexStrike AI dengan AMAN (hanya 127.0.0.1).
+# JANGAN menjalankan hexstrike_server.py langsung: upstream bind ke 0.0.0.0 tanpa autentikasi.
+HEX_DIR='@HEX_DIR@'
+HEX_ENV='@HEX_ENV@'
+DEFAULT_PORT='@HEX_PORT@'
+LAUNCHER='@LAUNCHER@'
+
+die() {
+  printf 'gh0st-hexstrike: %s\n' "$*" >&2
+  exit 1
+}
+
+case "${1:-}" in
+  -h|--help)
+    cat <<'EOT'
+gh0st-hexstrike [port]
+
+Menjalankan server HexStrike AI HANYA di 127.0.0.1 (default port dari setup).
+Server ini memberi AI kemampuan MENJALANKAN PERINTAH & tool keamanan.
+Pakai hanya utk target milikmu / berizin tertulis / CTF. Hentikan dengan Ctrl+C.
+Cek hidup: curl http://127.0.0.1:8888/health
+EOT
+    exit 0
+    ;;
+esac
+
+if [ "$(id -u)" -eq 0 ]; then
+  die "jangan dijalankan sebagai root; pakai akun biasa."
+fi
+
+[ -x "$HEX_ENV/bin/python" ] || die "venv tidak ditemukan: $HEX_ENV (setup HexStrike belum selesai?)"
+[ -f "$LAUNCHER" ] || die "peluncur tidak ditemukan: $LAUNCHER"
+
+PORT="${1:-$DEFAULT_PORT}"
+case "$PORT" in
+  ''|*[!0-9]*) die "port harus angka" ;;
+esac
+
+if [ -t 0 ] && [ -z "${GH0ST_HEX_YES:-}" ]; then
+  cat >&2 <<'EOT'
+PERINGATAN: HexStrike membiarkan agen AI menjalankan perintah di komputer ini.
+Hanya untuk sistem milikmu atau yang kamu punya izin tertulis untuk diuji.
+EOT
+  printf 'Lanjut? [y/N] ' >&2
+  read -r _ans || _ans=""
+  case "$_ans" in
+    y|Y|yes|YES) : ;;
+    *) exit 0 ;;
+  esac
+fi
+
+HEX_DIR="$HEX_DIR" exec "$HEX_ENV/bin/python" "$LAUNCHER" --port "$PORT"
+

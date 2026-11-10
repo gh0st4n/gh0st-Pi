@@ -1,0 +1,218 @@
+#!/bin/sh
+#!/bin/sh
+# gh0st-pi-managed  (penanda utk uninstall.sh; jangan dihapus)
+#
+# gh0st-ai - kendali sederhana utk AI lokal milik gh0st-pi.
+SV='@SV@'
+LOGDIR='@LOGDIR@'
+
+die() {
+  printf 'gh0st-ai: %s\n' "$*" >&2
+  exit 1
+}
+
+say() {
+  printf '%s\n' "$*"
+}
+
+usage() {
+  cat <<'EOT'
+gh0st-ai - nyalakan / matikan AI lokal di laptop ini
+
+  gh0st-ai start         nyalakan AI (butuh 10-90 detik memuat model)
+  gh0st-ai stop          matikan AI (membebaskan RAM)
+  gh0st-ai restart       matikan lalu nyalakan lagi
+  gh0st-ai status        lihat AI nyala/mati dan model yang dipakai
+  gh0st-ai test          tanya satu pertanyaan utk memastikan AI menjawab
+  gh0st-ai model         lihat daftar model; ganti: gh0st-ai model <nomor|nama>
+  gh0st-ai think on|off  mode "berpikir" (on = lebih teliti tapi LAMBAT di CPU)
+  gh0st-ai url           alamat ngobrol lewat browser
+  gh0st-ai log           lihat log (Ctrl+C utk keluar)
+
+Setelah 'start', buka browser ke alamat dari 'gh0st-ai url' utk ngobrol
+seperti ChatGPT, atau buka terminal baru dan ketik: pi
+EOT
+}
+
+cmd="${1:-help}"
+case "$cmd" in
+  help|-h|--help)
+    usage
+    exit 0
+    ;;
+esac
+
+if [ "$(id -u)" -ne 0 ]; then
+  if command -v sudo >/dev/null 2>&1; then
+    exec sudo "$0" "$@"
+  elif command -v doas >/dev/null 2>&1; then
+    exec doas "$0" "$@"
+  fi
+  die "butuh root, tapi sudo/doas tidak ditemukan"
+fi
+
+[ -f "$SV/conf" ] || die "konfigurasi tidak ada: $SV/conf (jalankan setup.sh dulu)"
+. "$SV/conf"
+
+is_ready() {
+  curl -fsS --max-time 3 "http://127.0.0.1:$PORT/v1/models" 2>/dev/null | grep -q '"data"'
+}
+
+is_up() {
+  sv status "$SV" 2>/dev/null | grep -q '^run:'
+}
+
+wait_ready() {
+  _i=0
+  _max="${GH0ST_READY_TIMEOUT:-180}"
+  printf 'Memuat model'
+  while [ "$_i" -lt "$_max" ]; do
+    if is_ready; then
+      printf '\n'
+      say "SIAP. Ngobrol di browser: http://127.0.0.1:$PORT   |   atau terminal baru: pi"
+      return 0
+    fi
+    sleep 2
+    _i=$((_i + 2))
+    printf '.'
+  done
+  printf '\n'
+  die "belum siap setelah ${_max}s. Cek: gh0st-ai log"
+}
+
+set_conf() {
+  _tmp="$SV/conf.new"
+  grep -v "^$1=" "$SV/conf" > "$_tmp" || true
+  printf "%s='%s'\n" "$1" "$2" >> "$_tmp"
+  mv -f "$_tmp" "$SV/conf"
+  chmod 644 "$SV/conf"
+}
+
+cmd_start() {
+  [ -s "$MODELS_DIR/$MODEL_FILE" ] || die "model '$MODEL_FILE' tidak ada di $MODELS_DIR. Pilih yang ada: gh0st-ai model"
+  if is_ready; then
+    say "AI sudah nyala. Alamat: http://127.0.0.1:$PORT"
+    return 0
+  fi
+  say "Menyalakan AI dengan model $MODEL_FILE ..."
+  sv up "$SV" || die "gagal memberi perintah ke runit (service tertaut? cek: ls -l /etc/runit/runsvdir/default/llama)"
+  wait_ready
+}
+
+cmd_stop() {
+  sv down "$SV" || die "gagal mematikan service"
+  say "AI dimatikan."
+}
+
+cmd_status() {
+  say "Model aktif : $MODEL_FILE   (thinking: $THINK)"
+  say "Service     : $(sv status "$SV" 2>&1)"
+  if is_ready; then
+    say "AI          : SIAP -> http://127.0.0.1:$PORT"
+  elif is_up; then
+    say "AI          : sedang memuat model, tunggu sebentar"
+  else
+    say "AI          : MATI (nyalakan: gh0st-ai start)"
+  fi
+}
+
+cmd_test() {
+  is_ready || die "AI belum siap. Jalankan dulu: gh0st-ai start"
+  command -v python3 >/dev/null 2>&1 || die "python3 dibutuhkan utk membaca jawaban"
+  say "Bertanya ke AI (di CPU bisa 10-60 detik)..."
+  _body='{"messages":[{"role":"user","content":"Jawab singkat dalam bahasa Indonesia: apa itu Linux?"}],"max_tokens":200}'
+  curl -fsS -m 300 -H 'Content-Type: application/json' -d "$_body" \
+    "http://127.0.0.1:$PORT/v1/chat/completions" | python3 -c 'import sys,json
+d=json.load(sys.stdin)
+t=d["choices"][0]["message"].get("content") or ""
+print(t.strip() if t.strip() else "(jawaban kosong: model masih berpikir. Coba: gh0st-ai think off)")'
+}
+
+cmd_model() {
+  _n=0
+  _pick=""
+  _q=$(printf '%s' "${2:-}" | tr '[:upper:]' '[:lower:]')
+  for _f in "$MODELS_DIR"/*.gguf; do
+    [ -e "$_f" ] || continue
+    _b=${_f##*/}
+    _n=$((_n + 1))
+    _mark=' '
+    if [ "$_b" = "$MODEL_FILE" ]; then
+      _mark='*'
+    fi
+    if [ -z "${2:-}" ]; then
+      printf ' %s %d) %s\n' "$_mark" "$_n" "$_b"
+      continue
+    fi
+    case "$_q" in
+      *[!0-9]*)
+        if printf '%s' "$_b" | tr '[:upper:]' '[:lower:]' | grep -q -F -- "$_q"; then
+          if [ -n "$_pick" ]; then
+            die "'$2' cocok dengan lebih dari satu model; tulis lebih spesifik"
+          fi
+          _pick="$_b"
+        fi
+        ;;
+      *)
+        if [ "$_q" -eq "$_n" ]; then
+          _pick="$_b"
+        fi
+        ;;
+    esac
+  done
+
+  if [ -z "${2:-}" ]; then
+    [ "$_n" -gt 0 ] || die "tidak ada file .gguf di $MODELS_DIR"
+    say "  (* = sedang dipakai)   Ganti: gh0st-ai model <nomor|sebagian-nama>"
+    say "  Saran: Qwen3-4B = cepat & ringan | Qwen3-8B = lebih pintar tapi lebih lambat"
+    return 0
+  fi
+
+  [ -n "$_pick" ] || die "model '$2' tidak ditemukan. Lihat daftar: gh0st-ai model"
+  case "$_pick" in
+    *"'"*) die "nama model tidak valid" ;;
+  esac
+  set_conf MODEL_FILE "$_pick"
+  MODEL_FILE="$_pick"
+  say "Model diganti ke: $_pick"
+  if is_up; then
+    say "AI sedang nyala; dimuat ulang..."
+    cmd_stop
+    sleep 1
+    cmd_start
+  else
+    say "AI mati; model baru dipakai pada 'gh0st-ai start'."
+  fi
+}
+
+cmd_think() {
+  case "${2:-}" in
+    on|off) : ;;
+    *) die "pakai: gh0st-ai think on|off" ;;
+  esac
+  set_conf THINK "$2"
+  THINK="$2"
+  say "Thinking: $2"
+  if [ "${HAS_REASONING:-0}" != 1 ]; then
+    say "(catatan: versi llama ini tidak mengenal opsi reasoning; pengaturan tidak berefek)"
+  fi
+  if is_up; then
+    cmd_stop
+    sleep 1
+    cmd_start
+  fi
+}
+
+case "$cmd" in
+  start)   cmd_start ;;
+  stop)    cmd_stop ;;
+  restart) cmd_stop; sleep 1; cmd_start ;;
+  status)  cmd_status ;;
+  test)    cmd_test ;;
+  model)   cmd_model "$@" ;;
+  think)   cmd_think "$@" ;;
+  url)     say "http://127.0.0.1:$PORT" ;;
+  log)     exec tail -n 60 -f "$LOGDIR/current" ;;
+  *)       usage; exit 1 ;;
+esac
+

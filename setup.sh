@@ -9,7 +9,7 @@ if [ ! -d "$SRC_DIR" ]; then
   exit 1
 fi
 
-for _module in common config preflight gpu deps llama models env uv service pi hexstrike finalize; do
+for _module in common config preflight gpu deps llama models env uv service helpers pi hexstrike finalize; do
   _file="$SRC_DIR/${_module}.sh"
   if [ ! -f "$_file" ]; then
     printf '%s: modul wajib hilang: %s\n' "$0" "$_file" >&2
@@ -26,13 +26,23 @@ main() {
     exit 0
   fi
 
-  require_root_and_distro
+  require_root_and_xbps
+  validate_config
 
-  REAL_USER="${SUDO_USER:-$USER}"
-  REAL_HOME=$(getent passwd "$REAL_USER" 2>/dev/null | cut -d: -f6)
-  if [ -z "$REAL_HOME" ]; then
-    warn "Home '$REAL_USER' tak ketemu; langkah per-user mungkin dilewati."
+  # sudo -> SUDO_USER ; doas -> DOAS_USER
+  REAL_USER="${SUDO_USER:-${DOAS_USER:-${USER:-}}}"
+  REAL_HOME=""
+  if [ -n "$REAL_USER" ]; then
+    REAL_HOME=$(getent passwd "$REAL_USER" 2>/dev/null | cut -d: -f6)
   fi
+  if [ -z "$REAL_HOME" ]; then
+    warn "Home user biasa tidak ketemu (REAL_USER='${REAL_USER:-}'); langkah per-user (Pi, HexStrike, env shell) dilewati."
+  elif [ "$REAL_USER" = root ]; then
+    warn "Dijalankan sebagai root langsung. Langkah per-user (Pi, HexStrike, env shell) dilewati; jalankan lewat 'sudo' dari akun biasa."
+  fi
+
+  # catat lokasi sejak awal supaya uninstall.sh tahu bahkan bila setup terhenti di tengah
+  write_state
 
   install_deps
   detect_gpus
@@ -42,8 +52,9 @@ main() {
   download_models
   setup_env
   setup_service
+  install_helpers
 
-  install_pi_ext
+  install_pi
   install_uv
   install_hexstrike
 

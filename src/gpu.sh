@@ -13,11 +13,8 @@ detect_gpus() {
   DETAIL=""
   NEED_NVIDIA=0
 
-  if ! have lspci; then
-    xbps_try pciutils
-  fi
-
-  for d in /sys/bus/pci/devices/*; do
+  # (tidak memasang apa pun di sini: mode gpu-check harus aman tanpa root)
+  for d in "${PCI_SYSFS:-/sys/bus/pci/devices}"/*; do
     if [ ! -d "$d" ]; then
       continue
     fi
@@ -82,7 +79,9 @@ detect_gpus() {
       driver=$(lspci -k -s "$bdf" 2>/dev/null | sed -n 's/.*Kernel driver in use: //p')
     fi
 
-    DETAIL="$DETAIL$(printf '%s|%s|%s|%s|%s\n' "$bdf" "$tag" "$sc" "$model" "$driver")"
+    # newline di akhir WAJIB dipertahankan (jangan pakai $(printf ...) yang membuangnya)
+    DETAIL="${DETAIL}${bdf}|${tag}|${sc}|${model}|${driver}
+"
   done
 }
 
@@ -96,21 +95,27 @@ classify_combo() {
   if [ "$N_NVIDIA" -gt 0 ]; then VSET="$VSET nvidia"; fi
   if [ "$N_OTHER" -gt 0 ]; then VSET="$VSET other"; fi
 
-  VSET=$(printf '%s\n' $VSET | sort -u | tr '\n' ' ')
-  VSET=${VSET% }
+  # urutan sudah tetap (intel amd nvidia other); JANGAN di-sort (merusak pola case di bawah)
+  # shellcheck disable=SC2086  # pemisahan kata disengaja
+  set -- $VSET
+  VSET="$*"
 
   dgpu=""
   igpu=""
 
+  # BUG lama: eval "\$SUB_$t" dgn t huruf kecil -> variabel SUB_amd (kosong), bukan SUB_AMD.
+  # Akibatnya iGPU/dGPU tidak pernah terdeteksi. Pakai nama variabel HURUF BESAR.
   for t in intel amd nvidia; do
-    eval "s=\$SUB_$t"
+    T=$(printf '%s' "$t" | tr '[:lower:]' '[:upper:]')
+    eval "s=\$SUB_$T"
     case " $s " in
       *" 02 "*) dgpu="$t" ;;
     esac
   done
 
   for t in intel amd nvidia; do
-    eval "s=\$SUB_$t"
+    T=$(printf '%s' "$t" | tr '[:lower:]' '[:upper:]')
+    eval "s=\$SUB_$T"
     if [ "$t" != "$dgpu" ]; then
       case " $s " in
         *" 00 "*)
@@ -189,12 +194,12 @@ select_vulkan_pkgs() {
   fi
 
   if [ "$NEED_NVIDIA" = 1 ]; then
-    VULKAN_NOTE="Nvidia: utk llama.cpp pakai GH0ST_BACKEND=cuda (installer resmi unduh binari CUDA sendiri). Driver kernel nvidia TETAP perlu manual via repo nonfree (lihat [E]-catatan & [H]); TIDK di-auto-install krn DKMS/secure-boot."
+    VULKAN_NOTE="Nvidia: utk llama.cpp pakai GH0ST_BACKEND=cuda (installer resmi unduh binari CUDA sendiri). Driver kernel nvidia TETAP perlu manual via repo void-repo-nonfree; TIDAK di-auto-install krn DKMS/secure-boot."
   fi
 
   if [ "$N_INTEL" -eq 0 ] && [ "$N_AMD" -eq 0 ] && [ "$NEED_NVIDIA" -eq 0 ]; then
     VULKAN_PKGS="$VULKAN_PKGS mesa-vulkan-lavapipe"
-    VULKAN_NOTE="${VULKAN_NOTE:+$VULKAN_NOTE | }Tak ada GPU vendor -> lavapipe (CPU rasterizer; TIDK utk offload)."
+    VULKAN_NOTE="${VULKAN_NOTE:+$VULKAN_NOTE | }Tak ada GPU vendor -> lavapipe (CPU rasterizer; TIDAK utk offload)."
   fi
 }
 
@@ -232,7 +237,7 @@ report_gpus() {
 
   printf 'REKOMENDASI BACKEND  : %s\n' "$REC"
   printf 'BACKEND AKTIF SKRIP  : %s   (ubah: sudo env GH0ST_BACKEND=... sh setup.sh)\n' "$GH0ST_BACKEND"
-  printf 'PAKET VULKAN (ref.)  : %s   [TIDK di-install jalur resmi; installer probe sendiri]\n' "$VULKAN_PKGS"
+  printf 'PAKET VULKAN (ref.)  : %s   [TIDAK di-install jalur resmi; installer probe sendiri]\n' "$VULKAN_PKGS"
 
   if [ -n "$VULKAN_NOTE" ]; then
     printf 'CATATAN VULKAN      : %s\n' "$VULKAN_NOTE"

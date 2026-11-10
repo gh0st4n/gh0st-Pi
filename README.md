@@ -1,731 +1,257 @@
-# gh0st-Pi
+# gh0st-pi
 
-> One-shot provisioning script untuk T4n OS / Void Linux (glibc) berbasis runit + xbps.  
-> Fokus: **local-first AI coding**, **offline inference via llama.cpp**, **reverse engineering dengan REA**, dan **security automation dengan HexStrike AI MCP**.
+> Provisioning satu-skrip untuk T4n OS / Void Linux (glibc) berbasis runit + xbps.
+> Fokus: **AI coding lokal-dulu**, **inferensi offline via llama**, **reverse engineering (REA)**, dan **otomasi keamanan (HexStrike AI MCP)**.
 
-`gh0st-pi` dirancang sebagai installer non-interaktif yang menyiapkan beberapa pilar utama secara deterministik, dengan prinsip **minimal by default**: artefak berat ditaruh di `/opt` (SSD), konfigurasi user tetap di `$HOME`, kredensial tidak disimpan otomatis, dan tool eksternal yang berisiko/legal-sensitive tidak dipasang diam-diam.
+Baru mengenal AI lokal? Mulai dari **[PANDUAN.md](PANDUAN.md)** (bahasa awam). Dokumen ini adalah referensi teknisnya.
 
----
+Prinsip: **minimal by default**, artefak berat di `/opt`, kredensial tidak pernah disimpan, service **tanpa hak root**, versi dikunci, dan tool keamanan yang berisiko tidak dipasang diam-diam.
 
 ## Daftar Isi
 
+- [Mulai cepat](#mulai-cepat)
 - [Ringkasan](#ringkasan)
-- [Pilar yang Disediakan](#pilar-yang-disediakan)
-- [Prinsip Desain](#prinsip-desain)
+- [Desain keamanan](#desain-keamanan)
 - [Prasyarat](#prasyarat)
-- [Instalasi Cepat](#instalasi-cepat)
-- [Variabel Konfigurasi](#variabel-konfigurasi)
-- [Apa yang Dipasang](#apa-yang-dipasang)
-- [Apa yang TIDAK Dipasang Otomatis](#apa-yang-tidak-dipasang-otomatis)
-- [Pasca Instalasi](#pasca-instalasi)
-- [Menggunakan Pi + llama.cpp Lokal](#menggunakan-pi--llamacpp-lokal)
-- [Menggunakan REA](#menggunakan-rea)
-- [Menggunakan HexStrike AI MCP](#menggunakan-hexstrike-ai-mcp)
-- [Upgrade ke Multi-Model / llama-swap](#upgrade-ke-multi-model--llama-swap)
-- [Tata Letak Penyimpanan SSD / HDD](#tata-letak-penyimpanan-ssd--hdd)
+- [Instalasi](#instalasi)
+- [Variabel konfigurasi](#variabel-konfigurasi)
+- [Perintah `gh0st-ai`](#perintah-gh0st-ai)
+- [Pi + llama lokal](#pi--llama-lokal)
+- [REA](#rea)
+- [HexStrike AI MCP](#hexstrike-ai-mcp)
+- [Multi-model / llama-swap](#multi-model--llama-swap)
+- [Tata letak penyimpanan SSD / HDD](#tata-letak-penyimpanan-ssd--hdd)
 - [Troubleshooting](#troubleshooting)
-- [Uninstall Manual](#uninstall-manual)
-- [Keamanan, Etika, dan Legalitas](#keamanan-etika-dan-legalitas)
-- [Struktur Direktori](#struktur-direktori)
-- [Kredit](#kredit)
-- [Lisensi](#lisensi)
+- [Uninstall](#uninstall)
+- [Keamanan, etika, legalitas](#keamanan-etika-legalitas)
+- [Struktur direktori](#struktur-direktori)
+- [Kredit dan lisensi](#kredit-dan-lisensi)
+
+---
+
+## Mulai cepat
+
+```sh
+sudo sh setup.sh        # pasang (bisa diulang kapan saja; unduhan model dilanjutkan)
+gh0st-ai start          # nyalakan AI
+gh0st-ai test           # pastikan AI menjawab
+# ngobrol lewat browser: http://127.0.0.1:8080   |   agent coding: buka terminal baru, ketik: pi
+gh0st-ai stop           # matikan, bebaskan RAM
+```
+
+> **Penting (CRLF):** semua skrip harus berakhiran baris **LF**. File yang berakhiran CRLF (umum bila
+> tersentuh Windows pada dual-boot) gagal dengan error aneh seperti `Bad fd number`. Cek dengan
+> `file setup.sh` (tidak boleh ada "CRLF"); perbaiki dengan `sed -i 's/\r$//' setup.sh src/*.sh bin/* uninstall.sh install.sh`.
+> Repo ini menyertakan `.gitattributes` yang memaksa LF.
 
 ---
 
 ## Ringkasan
 
-`gh0st-pi` adalah skrip provisioning untuk membangun workstation/lab AI-assisted security research berbasis T4n OS / Void Linux.
-
-Stack utama yang disiapkan:
-
-| Komponen | Fungsi | Status Provisioning |
+| Komponen | Fungsi | Status provisioning |
 |---|---|---|
-| **llama.cpp / llama server** | Inference model GGUF secara lokal | Otomatis via installer resmi `llama.app` |
-| **Pi** | Coding agent / MCP client / automation | Manual/integrasi per-user |
-| **pi-llama-cpp** | Ekstensi Pi untuk terhubung ke llama.cpp server | Best-effort otomatis |
-| **REA** | Reverse engineering & binary/app analysis | Setup manual via `npx rea-agents setup` |
-| **HexStrike AI** | MCP server untuk Orchestration security tools | Best-effort otomatis, on-demand |
-| **runit service `llama`** | Menjalankan llama server localhost-only | Otomatis |
-| **uv** | Opsional, frontend Python venv/pip | Default OFF |
+| **llama (`llama serve`)** | Inferensi model GGUF lokal | Otomatis via installer resmi `llama.app`, dijalankan **tanpa root** |
+| **Model GGUF** | Qwen3-4B (default), Qwen3-8B, Qwen2.5-Coder-7B/3B | Otomatis, bisa dilanjutkan, diverifikasi SHA256 |
+| **runit service `llama`** | Menjalankan server localhost-only sebagai user `_llama` | Otomatis, **tidak nyala saat boot** secara default |
+| **`gh0st-ai`** | Perintah start / stop / ganti model / tes | Otomatis |
+| **Pi** (`@earendil-works/pi-coding-agent`) | Coding agent di terminal | Otomatis, dipasang sebagai **user biasa**, versi dikunci |
+| **pi-llama-cpp** | Ekstensi Pi untuk server llama | Otomatis, versi dikunci. Ekstensi lain = opt-in |
+| **HexStrike AI** | MCP server untuk orkestrasi tool keamanan | Otomatis (commit dikunci), on-demand lewat `gh0st-hexstrike` |
+| **REA** | Reverse engineering | Manual (`npx rea-agents setup`) |
+| **uv** | Frontend Python venv/pip | Default OFF |
 
-Skrip ini **tidak** menyimpan API key, tidak menginstal driver NVIDIA secara otomatis, dan tidak memasang seluruh tool offensif HexStrike secara default.
+Skrip ini **tidak** menyimpan API key, tidak memasang driver NVIDIA, dan tidak memasang tool ofensif HexStrike.
+
+### Pilar
+
+1. **Pi + llama lokal**: inferensi offline. Default `Qwen3-4B-Q4_K_M`, `http://127.0.0.1:8080`, konteks 16384, backend `cpu`. Cocok untuk kode sensitif, sampel malware, lab offline.
+2. **Pi + REA**: reverse engineering, inspeksi binary/Electron/APK/firmware. Setup manual/interaktif, butuh Node modern.
+3. **Pi untuk ekosistem T4n Labs**: model online konteks besar untuk refactor besar; llama lokal untuk kode sensitif; mode RPC/JSON Pi untuk pipeline lokal.
+4. **HexStrike AI MCP**: orkestrasi tool keamanan, on-demand (bukan service runit), hanya untuk target berizin.
 
 ---
 
-## Pilar yang Disediakan
+## Desain keamanan
 
-### [1] Pi + llama.cpp lokal
+Versi sebelumnya memiliki rantai eskalasi ke root: service dijalankan sebagai root, sementara `chown -R` menyerahkan
+seluruh `/opt/gh0st-pi` (termasuk binari yang dieksekusi root) ke user biasa. Proses apa pun milik user (ekstensi Pi
+berbahaya, agent yang terkena prompt injection, HexStrike) bisa menimpa binari itu dan menjadi root saat service restart/boot.
+Desain sekarang:
 
-Menyediakan inference lokal melalui llama.cpp agar Pi dapat bekerja offline atau semi-offline.
+| Aspek | Sekarang |
+|---|---|
+| Service llama | Jalan sebagai user sistem `_llama` (tanpa login, tanpa hak root) lewat `chpst -u` |
+| Binari llama | Dipasang oleh installer **sebagai `_llama`** di folder sementara, lalu **disalin sebagai milik root** ke `$LLAMA_HOME/bin/llama`. `_llama` pun tidak bisa menimpanya |
+| Installer eksternal | Diunduh ke **file** (bukan `curl \| sh`), SHA256 dicatat; bisa dikunci via `GH0ST_LLAMA_INSTALLER_SHA256` |
+| `/opt/gh0st-pi` | Milik root. Hanya `workspace/` dan source+venv+cache HexStrike yang milik user |
+| Pi, HexStrike, pip, git | Dijalankan sebagai **user biasa**, tidak pernah sebagai root |
+| Versi | Pi `1.3.0`, `pi-llama-cpp@0.17.0`, HexStrike per commit `d689933…`; semuanya dipilih yang sudah beredar >14 hari |
+| Model GGUF | Header `GGUF` + SHA256 dibandingkan dengan `x-linked-etag` dari Hugging Face; file rusak ditolak |
+| Ekstensi Pi tambahan | **Opt-in** (`GH0ST_PI_EXT_EXTRA`); belum diaudit kodenya |
+| Jaringan | llama bind `127.0.0.1`. HexStrike lewat peluncur yang memaksa `127.0.0.1` (lihat di bawah) |
+| Telemetry | `PI_TELEMETRY=0` di env block (mematikan ping versi anonim Pi) |
 
-- Model default: `Qwen2.5-Coder-7B-Instruct-Q4_K_M.gguf`
-- Endpoint: `http://127.0.0.1:8080`
-- Context default: `16384`
-- Backend default: `cpu`
-- Service: runit `llama`
+**Temuan HexStrike (diverifikasi pada commit yang dikunci):** `hexstrike_server.py` memanggil
+`app.run(host="0.0.0.0", ...)`. Variabel `HEXSTRIKE_HOST` dibaca tetapi tidak dipakai untuk bind. Endpoint `POST /api/command`
+mengeksekusi perintah shell dari request, dan tidak ada autentikasi. Dijalankan langsung (seperti pada panduan lama),
+siapa pun di WiFi/LAN yang sama dapat menjalankan perintah sebagai user kamu. Karena itu dipasang `gh0st-hexstrike`,
+peluncur yang mengimpor `app` lalu menjalankannya dengan `host="127.0.0.1"` dan `debug=False`, tanpa mengubah source upstream.
+**Jangan menjalankan `hexstrike_server.py` langsung.**
 
-Cocok untuk:
-
-- Coding tanpa mengirim kode ke cloud
-- Analisis sampel malware / data sensitif
-- Lab offline
-- Penghematan biaya API
-
-### [2] Pi + REA
-
-REA digunakan untuk reverse engineering, inspect binary, JavaScript/Electron app, APK, firmware, dan analisis bukti-level rendah.
-
-- Setup REA bersifat manual/interaktif
-- Membutuhkan Node.js modern
-- Native analysis dapat memakai Ghidra/Hopper/IDA jika tersedia
-- Linux membutuhkan `ps` yang compatible procps untuk ownership check
-
-Cocok untuk:
-
-- Bug hunting
-- Malware analysis
-- Software preservation
-- Interoperability research
-- Analisis aplikasi yang kamu miliki atau berwenang periksa
-
-### [3] Pi untuk coding hardcore / ekosistem T4n Labs
-
-Pi digunakan sebagai coding agent utama, baik dengan model online maupun lokal.
-
-Strategi yang disarankan:
-
-- Model online context besar untuk refactor besar / repo raksasa
-- llama.cpp lokal untuk kode sensitif / privasi / no-network
-- Mode RPC/JSON Pi untuk automation dan pipeline lokal
-
-### [4] HexStrike AI MCP
-
-HexStrike AI dipasang sebagai MCP server on-demand, bukan service runit.
-
-- Direktori source: `/opt/gh0st-pi/tools/hexstrike-ai`
-- Virtualenv: `/opt/gh0st-pi/tools/hexstrike-ai/hexstrike-env`
-- Port default: `8888`
-- Status: best-effort
-
-Penting:
-
-- HexStrike AI memberikan akses tool keamanan yang kuat kepada AI agent
-- Jalankan hanya di lingkungan terisolasi
-- Gunakan hanya pada target yang kamu miliki atau punya izin tertulis
-- Tool eksternal seperti nmap, sqlmap, ffuf, ghidra, dll. tidak dipasang otomatis
-
-
-## Prinsip Desain
-
-### Minimal by Default
-
-Skrip hanya memasang komponen inti yang diperlukan untuk provisioning. Tool eksternal, driver proprietary, browser agent berat, dan dependensi build C++ tidak dipasang kecuali benar-benar dibutuhkan atau diaktifkan secara eksplisit.
-
-### Heavy Artifacts di SSD
-
-Semua artefak berat diarahkan ke `/opt/gh0st-pi`:
-
-- llama binary
-- GGUF models
-- HexStrike source + venv
-- pip cache HexStrike
-- workspace T4n Labs
-
-Konfigurasi user tetap di `$HOME` karena shell harus membacanya dari home directory.
-
-### Tidak Menyimpan Kredensial
-
-Skrip tidak menulis API key ke file konfigurasi. Provider online seperti DeepSeek, Qwen, GLM/Z.AI, OpenRouter, dll. harus diisi manual melalui mekanisme login agent.
-
-### Localhost-First
-
-LLama server dan HexStrike MCP server default bind ke `127.0.0.1`.
-
-Jangan ekspos port ini ke LAN/internet tanpa authentication, TLS, SSH tunnel, atau kontrol jaringan yang jelas.
+---
 
 ## Prasyarat
 
-### Sistem Operasi
+- T4n OS / Void Linux glibc, dengan `xbps-install` dan runit (`sv`, `chpst`), plus `useradd` (paket `shadow`) dan `sha256sum`.
+- Akun biasa yang menjalankan `sudo` (bukan login root langsung; langkah per-user Pi/HexStrike/env dilewati bila root).
+- Internet untuk: installer llama, model GGUF (Hugging Face), HexStrike (GitHub), npm (Pi, ekstensi).
+- RAM 16 GB cukup untuk model 4B/8B. SSD disarankan untuk `/opt`. Keempat model memakan sekitar 15 GB.
+- **Node.js >= 22.19** untuk Pi (REA: 22.x >= 22.19 / 24.x >= 24.11 / 26+). Skrip memeriksa dan memberi peringatan.
+- GPU opsional (NVIDIA: CUDA; AMD/Intel: Vulkan/ROCm). Default `cpu`, aman untuk 16 GB.
+- Paket `zstd` sangat disarankan (lihat [Troubleshooting](#binari-llama-0-byte--rusak)).
 
-- T4n OS
-- Void Linux glibc variant
-- Memiliki `xbps-install`
-- Menggunakan runit
+---
 
-### Akses
-
-- Root / sudo
-- Koneksi internet untuk download:
-  - installer resmi llama
-  - model GGUF dari Hugging Face
-  - repository HexStrike AI
-  - npm package untuk Pi extensions / REA
-
-### Hardware
-
-- Disarankan SSD untuk `/opt`
-- RAM minimal 16 GB untuk model 7B Q4_K_M secara nyaman
-- GPU opsional:
-  - NVIDIA untuk backend CUDA
-  - AMD/Intel untuk Vulkan/ROCm tergantung dukungan llama.cpp
-- Backend default adalah `cpu` agar aman di mesin 16 GB
-
-### Versi Node.js untuk REA
-
-REA membutuhkan Node.js:
-
-- 22.x >= 22.19, atau
-- 24.x >= 24.11, atau
-- 26+
-
-Skrip akan memeriksa versi Node dan memberi warning jika tidak memenuhi syarat.
-
-## Instalasi Cepat
-
-### Jalankan skrip sebagai root
+## Instalasi
 
 ```sh
-sudo ./setup.sh
+sudo sh setup.sh                              # default: CPU, Qwen3-4B, Pi + HexStrike
+sudo env GH0ST_BACKEND=cpu sh setup.sh        # backend eksplisit
+sudo sh setup.sh gpu-check                    # hanya laporan GPU, tidak mengubah sistem
+sudo env LLAMA_VERSION=b<NOMOR> sh setup.sh   # kunci build llama (nomor build terlihat di output 'llama version')
+sudo env HF_TOKEN=hf_xxx sh setup.sh          # token HF utk installer llama (bukan utk unduhan model)
+sudo env GH0ST_INSTALL_HEXSTRIKE=0 sh setup.sh   # tanpa HexStrike (pip-nya berat)
+sudo env GH0ST_INSTALL_PI=0 sh setup.sh          # tanpa Pi
 ```
 
-### Dengan backend CPU eksplisit
+Aman diulang: yang sudah ada dilewati, unduhan model dilanjutkan, pilihan model/thinking dipertahankan.
 
-```sh
-sudo env GH0ST_BACKEND=cpu ./setup.sh
-```
+Kegagalan di Pi, HexStrike, uv, unduhan model, atau tes service **tidak** menghentikan setup; semuanya dicatat dan diringkas di akhir. Hanya kegagalan memasang llama (komponen inti) yang menghentikannya.
 
-### Cek GPU tanpa mengubah sistem
+Urutan kerja: cek root/xbps/runit, validasi konfigurasi, tulis state file, pasang dependensi, laporan GPU, pasang llama, unduh model
+(default lebih dulu), env shell, service (tes nyala-lalu-mati), `gh0st-ai`, Pi, uv (opsional), HexStrike, rapikan hak akses.
 
-Mode ini tidak membutuhkan root dan tidak memasang apa pun:
+### Yang dipasang
 
-```sh
-./setup.sh gpu-check
-```
+1. **Dependensi inti (xbps, `-y`)**: `git pkg-config curl ca-certificates nodejs python3 procps-ng`; opsional: `zstd`, `pciutils`.
+2. **llama**: installer resmi, dijalankan sebagai `_llama` di `$LLAMA_STATE/stage`; binari disalin ke `$LLAMA_HOME/bin/llama`
+   (milik root); symlink `$BIN_DIR/llama`. Installer memasang build **nightly terbaru** kecuali `LLAMA_VERSION` diisi.
+   Flag server (`--jinja`, `--reasoning`, `--threads`, `--n-gpu-layers`) dipakai **hanya bila disebut di `llama serve --help`** versi terpasang.
+3. **Model GGUF** (urutan unduh = urutan daftar): `Qwen3-4B`, `Qwen3-8B`, `Qwen2.5-Coder-7B-Instruct`, `Qwen2.5-Coder-3B-Instruct` (semua `Q4_K_M`, repo `unsloth/*-GGUF`).
+4. **Service runit `llama`**: `$SV/{run,conf,log/run,down}`; link di `$RN/llama`. Log lewat `svlogd` ke `/var/log/llama/current`.
+   File `down` membuat service **tidak nyala saat boot** (`GH0ST_AUTOSTART=1` menghapusnya). Setup menyalakan sekali untuk tes `/v1/models`, lalu mematikannya lagi.
+5. **Env user** (`~/.bashrc`, `~/.zshrc`, fish bila ada), satu blok bertanda `# gh0st-pi-llama-env`: `LLAMA_MODELS`, `LLAMA_SERVER_URL`, `PI_TELEMETRY=0`. Backup `*.gh0stbak.<epoch>`.
+6. **Pi**: `npm install -g --prefix ~/.local @earendil-works/pi-coding-agent@1.3.0` sebagai user; symlink `$BIN_DIR/pi`; lalu `pi install npm:pi-llama-cpp@0.17.0`.
+7. **HexStrike**: git di commit terkunci, venv + pip sebagai user, peluncur aman `gh0st-hexstrike`. Bila pip gagal, dicoba sekali lagi setelah memasang `python3-devel gcc libffi-devel`.
+8. **uv** (opsional, `GH0ST_INSTALL_UV=1`): diinstal sebagai `_llama`, disalin ke `$UV_HOME/bin` (milik root), symlink bila belum ada.
 
-atau:
+### Yang TIDAK dipasang otomatis
 
-```sh
-GPU_CHECK_ONLY=1 ./setup.sh
-```
+Driver NVIDIA/DKMS, toolchain C++ (hanya untuk fallback build), tool keamanan eksternal HexStrike (nmap, sqlmap, dst.), browser agent
+(Chromium/chromedriver), Ghidra/IDA/Hopper, REA, API key/kredensial, ekstensi Pi di luar `pi-llama-cpp`.
 
-### Pin versi llama tertentu
+---
 
-Jika kamu ingin reproducible build/download:
+## Variabel konfigurasi
 
-```sh
-sudo env LLAMA_VERSION=<version> ./setup.sh
-```
+Semua dibaca dari environment: `sudo env NAMA=nilai sh setup.sh`. Nilai path harus absolut, tanpa spasi dan kutip.
+
+| Variabel | Default | Fungsi |
+|---|---|---|
+| `GH0ST_ROOT` | `/opt/gh0st-pi` | Akar artefak |
+| `LLAMA_MODELS` | `$GH0ST_ROOT/models` | Folder model (boleh di HDD; `_llama` harus bisa membacanya) |
+| `GH0ST_DEFAULT_MODEL` | `Qwen3-4B-Q4_K_M.gguf` | Model aktif awal |
+| `MODELS_LIST` | 4 model Qwen | Baris `repo\|file`; urutan = urutan unduh |
+| `GH0ST_PORT` / `GH0ST_CTX` | `8080` / `16384` | Port dan ukuran konteks |
+| `GH0ST_THREADS` | otomatis (`nproc`-2) | Jumlah thread inferensi |
+| `GH0ST_THINKING` | `off` | `on` / `off`. `off` menambah `--reasoning off` bila didukung |
+| `GH0ST_AUTOSTART` | `0` | `1` = nyala otomatis saat boot |
+| `GH0ST_BACKEND` | `cpu` | `cpu` / `cuda` / `rocm` / `vulkan` / `auto` |
+| `GH0ST_NGPU` | otomatis (`0` utk cpu/auto, `99` utk lain) | Jumlah layer ke GPU |
+| `GH0ST_REINSTALL` | `0` | `1` = pasang ulang llama (`FORCE_BUILD` lama tetap dikenali) |
+| `GH0ST_SKIP_INSTALL` | `0` | `SKIP_INSTALL=1` ke installer llama |
+| `LLAMA_VERSION`, `LLAMA_BUCKET`, `HF_TOKEN` | kosong | Diteruskan ke installer llama |
+| `GH0ST_LLAMA_INSTALLER_SHA256` | kosong | Kunci hash installer llama |
+| `GH0ST_INSTALL_PI` | `1` | Pasang Pi |
+| `PI_VERSION`, `PI_PKG`, `PI_EXT_LIST` | `1.3.0`, `@earendil-works/pi-coding-agent`, `pi-llama-cpp@0.17.0` | Pin Pi dan ekstensi |
+| `GH0ST_PI_EXT_EXTRA` | kosong | Ekstensi tambahan (opt-in, belum diaudit) |
+| `GH0ST_INSTALL_HEXSTRIKE` | `1` | Pasang HexStrike |
+| `HEX_REF`, `REPO_HEX`, `HEX_PORT` | commit `d689933…`, repo upstream, `8888` | Pin dan port HexStrike |
+| `GH0ST_INSTALL_UV` | `0` | Pasang uv |
+| `GH0ST_READY_TIMEOUT` | `180` | Detik menunggu server siap |
+| `SV`, `RN`, `SVLOG_DIR`, `BIN_DIR`, `LLAMA_USER`, `LLAMA_STATE` | `/etc/sv/llama`, `/etc/runit/runsvdir/default`, `/var/log/llama`, `/usr/local/bin`, `_llama`, `/var/lib/llama` | Lokasi sistem |
 
 Contoh:
 
 ```sh
-sudo env LLAMA_VERSION=b6056 ./setup.sh
+# model ke HDD
+sudo env LLAMA_MODELS=/mnt/hdd/gh0st-models sh setup.sh
+# hanya satu model, tanpa HexStrike (instalasi ringan)
+sudo env MODELS_LIST='unsloth/Qwen3-4B-GGUF|Qwen3-4B-Q4_K_M.gguf' GH0ST_INSTALL_HEXSTRIKE=0 sh setup.sh
 ```
 
-> Catatan: pin versi sangat disarankan untuk lab produksi/repeatable research.
+---
 
-### Menggunakan Hugging Face token
+## Perintah `gh0st-ai`
 
-Untuk menghindari rate limit atau mengakses private/restricted repo:
+`gh0st-ai start | stop | restart | status | test | model [nomor\|nama] | think on\|off | url | log | help`.
+Meminta `sudo`/`doas` sendiri. Mengubah `$SV/conf` (model, thinking) lalu memuat ulang bila AI sedang nyala.
+
+`$SV/conf` berisi `MODEL_FILE`, `MODELS_DIR`, `LLAMA_BIN`, `SERVE_SUBCMD`, `PORT`, `CTX`, `EXTRA_FLAGS`, `HAS_REASONING`, `THINK`.
+Perubahan manual: edit file itu lalu `gh0st-ai restart`. Jangan mengedit `run`.
+
+---
+
+## Pi + llama lokal
 
 ```sh
-sudo env HF_TOKEN=hf_xxx ./setup.sh
+gh0st-ai start
+pi                       # di terminal baru
 ```
 
-## Variabel Konfigurasi
+Di dalam Pi, `/models` menampilkan model dari server lokal. `pi --list-models llama` (non-interaktif) menampilkan provider
+berbentuk `llama-server=http://127.0.0.1:8080` bila server nyala. Status `Sleeping` hanya muncul pada mode router dengan `--sleep-idle-seconds`.
 
-Semua variabel dapat dilewatkan melalui `sudo env VAR=value ./setup.sh`.
+Provider online (DeepSeek, Qwen/DashScope, GLM/Z.AI, OpenRouter): isi kunci lewat `/login` di Pi. Skrip tidak menyimpan kredensial.
+Strategi: online konteks besar untuk refactor/repo raksasa; llama offline untuk sampel malware, kode sensitif, dan lab tanpa jaringan.
 
-| Variabel | Default | Deskripsi |
-|---|---:|---|
-| `GH0ST_ROOT` | `/opt/gh0st-pi` | Akar seluruh artefak gh0st-pi |
-| `LLAMA_MODELS` | `$GH0ST_ROOT/models` | Direktori model GGUF |
-| `UV_HOME` | `$GH0ST_ROOT/uv` | Direktori install uv bila diaktifkan |
-| `HEX_DIR` | `$GH0ST_ROOT/tools/hexstrike-ai` | Direktori source HexStrike AI |
-| `HEX_ENV` | `$HEX_DIR/hexstrike-env` | Virtualenv HexStrike AI |
-| `HEX_PORT` | `8888` | Port default HexStrike MCP server |
-| `PORT` | `8080` | Port llama server untuk pi-llama-cpp |
-| `CTX` | `16384` | Context size llama server |
-| `NGPU` | `0` | Jumlah layer GPU; 0 = CPU-only |
-| `GH0ST_BACKEND` | `cpu` | Backend llama: `cpu`, `cuda`, `rocm`, `vulkan`, `auto` |
-| `FORCE_BUILD` | `0` | Paksa install ulang binari llama |
-| `GH0ST_SKIP_INSTALL` | `0` | Set `SKIP_INSTALL=1` untuk installer resmi llama |
-| `GH0ST_INSTALL_UV` | `0` | Pasang uv; default OFF |
-| `REPO_HEX` | `https://github.com/0x4m4/hexstrike-ai.git` | Repo HexStrike AI |
-| `MODELS_LIST` | daftar model Qwen | Daftar model GGUF format `repo|filename` |
-| `DEFAULT_MODEL_FILE` | `Qwen2.5-Coder-7B-Instruct-Q4_K_M.gguf` | Model default service |
-| `HF_TOKEN` | kosong | Token Hugging Face |
-| `LLAMA_VERSION` | kosong | Pin versi installer llama |
-| `LLAMA_BUCKET` | `ggml-org/install.sh` | Bucket installer llama |
-| `GPU_CHECK_ONLY` | `0` | Hanya deteksi GPU |
+Ekstensi opsional (belum diaudit kodenya, pasang dengan sadar):
+`sudo env GH0ST_PI_EXT_EXTRA="pi-agent-modes@0.3.0 pi-manage-todo-list@0.4.0" sh setup.sh`.
 
-### Contoh konfigurasi umum
+---
 
-#### CPU-only, aman untuk 16 GB
+## REA
+
+REA (`morluto/rea`) bersifat manual/interaktif. Skrip ini tidak mengaudit atau menguji REA.
 
 ```sh
-sudo env GH0ST_BACKEND=cpu ./setup.sh
+node -v                  # 22.x >= 22.19, 24.x >= 24.11, atau 26+
+npx rea-agents setup     # pilih agent yang kompatibel, review, approve; lalu restart Pi
 ```
 
-#### Coba backend auto-detect
+Analisis native opsional: Ghidra / Hopper / IDA; Android: JDK + JADX headless; firmware: Binwalk / Unblob.
+Linux butuh `ps` kompatibel procps di PATH (paket `procps-ng` dicoba dipasang).
+
+---
+
+## HexStrike AI MCP
+
+On-demand, **bukan** service runit. Jalankan hanya lewat peluncur aman:
 
 ```sh
-sudo env GH0ST_BACKEND=auto ./setup.sh
-```
-
-#### Pasang uv secara opsional
-
-```sh
-sudo env GH0ST_INSTALL_UV=1 ./setup.sh
-```
-
-#### Pindahkan model ke HDD
-
-```sh
-sudo env LLAMA_MODELS=/mnt/hdd/gh0st-models ./setup.sh
-```
-
-## Apa yang Dipasang
-
-### 1. Dependensi inti via xbps
-
-Skrip mencoba memasang:
-
-```sh
-git
-pkg-config
-curl
-ca-certificates
-nodejs
-python3
-procps-ng
-```
-
-Opsional:
-
-```sh
-zstd
-```
-
-Jika `zstd` tidak ada, installer resmi llama akan mencoba mengunduh helper `unzstd` sendiri.
-
-### 2. llama.cpp via installer resmi
-
-Installer resmi:
-
-```sh
-https://llama.app/install.sh
-```
-
-Artefak:
-
-- `$GH0ST_ROOT/llama/.llama-app/llama`
-- symlink global: `/usr/local/bin/llama`
-
-Backend dipilih berdasarkan `GH0ST_BACKEND`.
-
-Default:
-
-```sh
-GH0ST_BACKEND=cpu
-```
-
-Ini berarti installer akan mencoba menghindari CUDA/ROCm/Vulkan dan mengambil build CPU sesuai FEATCODE.
-
-### 3. Model GGUF
-
-Model diunduh dari Hugging Face ke:
-
-```sh
-$LLAMA_MODELS
-```
-
-Default list:
-
-```text
-unsloth/Qwen2.5-Coder-7B-Instruct-GGUF|Qwen2.5-Coder-7B-Instruct-Q4_K_M.gguf
-unsloth/Qwen2.5-Coder-3B-Instruct-GGUF|Qwen2.5-Coder-3B-Instruct-Q4_K_M.gguf
-unsloth/Qwen3-8B-GGUF|Qwen3-8B-Q4_K_M.gguf
-unsloth/Qwen3-4B-GGUF|Qwen3-4B-Q4_K_M.gguf
-```
-
-Model default yang dijalankan service:
-
-```text
-Qwen2.5-Coder-7B-Instruct-Q4_K_M.gguf
-```
-
-> Selalu verifikasi nama file model di Hugging Face sebelum dipakai di produksi.
-
-### 4. Runit service llama
-
-Service dibuat di:
-
-```sh
-/etc/sv/llama
-```
-
-Dan ditautkan ke:
-
-```sh
-/etc/runit/runsvdir/default/llama
-```
-
-Service menjalankan:
-
-```sh
-llama serve --model ... --host 127.0.0.1 --port 8080 ...
-```
-
-Endpoint:
-
-```text
-http://127.0.0.1:8080
-```
-
-### 5. Environment user
-
-Skrip menambahkan blok env ke shell rc user dengan marker:
-
-```text
-gh0st-pi-llama-env
-```
-
-File yang disentuh bila ada:
-
-- `~/.bashrc`
-- `~/.zshrc`
-- `~/.config/fish/config.fish`
-
-Isinya hanya pointer, misalnya:
-
-```sh
-export LLAMA_MODELS=/opt/gh0st-pi/models
-export LLAMA_SERVER_URL=http://127.0.0.1:8080
-```
-
-### 6. Ekstensi Pi
-
-Skrip mencoba memasang ekstensi berikut bila command `pi` tersedia:
-
-```text
-pi-llama-cpp
-pi-agent-modes
-pi-themes
-pi-manage-todo-list
-pi-redteam
-pi-security-analysis
-```
-
-Untuk `pi-llama-cpp`, terdapat fallback GitHub:
-
-```sh
-pi install https://github.com/gsanhueza/pi-llama-cpp
-```
-
-Pemasangan ekstensi bersifat best-effort. Jika gagal, ulangi manual sebagai user:
-
-```sh
-pi install npm:<extension-name>
-```
-
-### 7. HexStrike AI
-
-HexStrike AI dipasang secara best-effort:
-
-- Clone repo ke `$HEX_DIR`
-- Buat virtualenv di `$HEX_ENV`
-- Install `requirements.txt` via pip dalam venv
-
-Jika berhasil:
-
-```text
-HEX_OK=1
-```
-
-Jika gagal, skrip tetap lanjut dan memberi peringatan.
-
-### 8. uv opsional
-
-uv **default OFF**.
-
-Aktifkan dengan:
-
-```sh
-sudo env GH0ST_INSTALL_UV=1 ./setup.sh
-```
-
-uv dipasang unmanaged ke:
-
-```sh
-$UV_HOME/bin
-```
-
-dan dibuat symlink global bila memungkinkan:
-
-```text
-/usr/local/bin/uv
-/usr/local/bin/uvx
-```
-
-## Apa yang TIDAK Dipasang Otomatis
-
-Skrip ini sengaja tidak memasang:
-
-- Pi core
-- API key / kredensial provider online
-- Driver NVIDIA
-- Tool eksternal HexStrike seperti:
-  - nmap
-  - masscan
-  - gobuster
-  - ffuf
-  - sqlmap
-  - nikto
-  - hydra
-  - john
-  - hashcat
-  - radare2
-  - binwalk
-  - pwntools
-  - ghidra
-- Chromium / ChromeDriver untuk browser agent HexStrike
-- Ghidra / IDA / Hopper untuk REA native analysis
-- JADX / JDK untuk Android analysis REA
-- Build toolchain C++ kecuali kamu menjalankan fallback manual
-
-Alasannya:
-
-- Minim by default
-- Beberapa tool memiliki implikasi legal/etis
-- Beberapa dependensi berat dan jarang dibutuhkan semua pengguna
-- Installer resmi / upstream bisa berubah
-- Nama paket di Void/T4n OS harus diverifikasi sebelum dipasang
-
-## Pasca Instalasi
-
- Setelah instalasi selesai, reload shell:
-
-```sh
-source ~/.bashrc
-```
-
-atau buka terminal baru.
-
-Cek service llama:
-
-```sh
-sudo sv status llama
-```
-
-Cek log:
-
-```sh
-sudo sv log llama
-```
-
-Cek endpoint model:
-
-```sh
-curl -fsS http://127.0.0.1:8080/v1/models
-```
-
-Respons idealnya mengandung `"data"`.
-
-Cek health HexStrike bila sudah dijalankan:
-
-```sh
+gh0st-hexstrike            # port default 8888, hanya 127.0.0.1; meminta konfirmasi bila interaktif
 curl -fsS http://127.0.0.1:8888/health
 ```
 
-## Menggunakan Pi + llama.cpp Lokal
-
-### 1. Pastikan env sudah ter-load
-
-```sh
-echo "$LLAMA_SERVER_URL"
-echo "$LLAMA_MODELS"
-```
-
-Expected:
-
-```text
-http://127.0.0.1:8080
-/opt/gh0st-pi/models
-```
-
-### 2. Jalankan Pi
-
-```sh
-pi
-```
-
-### 3. Buka daftar model
-
-Di dalam Pi:
-
-```text
-/models
-```
-
-Provider yang diharapkan:
-
-```text
-Llama.cpp
-```
-
-Model yang tersedia tergantung server:
-
-- Qwen2.5-Coder-7B-Instruct
-- Qwen2.5-Coder-3B-Instruct
-- Qwen3-8B
-- Qwen3-4B
-
-### 4. Pilih model
-
-Gunakan perintah `/models` untuk:
-
-- Load model
-- Switch model
-- Unload model
-- Lihat status:
-  - Loaded
-  - Loading
-  - Failed
-  - Sleeping
-  - Unloaded
-
-Catatan:
-
-- Status `Sleeping` hanya muncul jika server dijalankan dengan `--sleep-idle-seconds`
-- Mode single-model default tidak mendukung unload
-
-### 5. Atur thinking level
-
-Untuk tugas reasoning/CTF/RE kompleks, naikkan thinking level:
-
-```text
-high
-xhigh
-max
-```
-
-Sesuaikan dengan konteks dan sumber daya mesin.
-
-## Menggunakan REA
-
-REA adalah komponen manual/interaktif.
-
-### 1. Pastikan Node.js memenuhi syarat
-
-```sh
-node -v
-```
-
-Syarat REA:
-
-- 22.x >= 22.19
-- 24.x >= 24.11
-- 26+
-
-### 2. Jalankan setup REA
-
-```sh
-npx rea-agents setup
-```
-
-Pilih agent yang kompatibel, misalnya Pi/Claude-compatible agent, lalu approve perubahan konfigurasi.
-
-REA akan membuat backup konfigurasi yang ada.
-
-### 3. Restart agent
-
-Setelah setup, restart Pi atau agent yang kamu gunakan.
-
-### 4. Native analysis opsional
-
-Untuk analisis binary mendalam, siapkan salah satu:
-
-- Ghidra
-- Hopper
-- IDA
-
-REA dapat menggunakan instalasi yang sudah ada.
-
-Untuk Android:
-
-- JDK
-- JADX headless
-
-Untuk firmware:
-
-- Binwalk
-- Unblob
-
-Linux membutuhkan `ps` compatible procps di PATH REA untuk proses ownership check. Paket `procps-ng` sudah dicoba dipasang oleh skrip.
-
-### 5. Contoh penggunaan
-
-Ajukan permintaan seperti:
-
-```text
-Inspect binary ini, tunjukkan bukti, dan jelaskan logika entrypoint-nya.
-```
-
-atau:
-
-```text
-Analisis aplikasi Electron ini, temukan modul, import, IPC boundary, dan jelaskan fitur search-nya.
-```
-
-## Menggunakan HexStrike AI MCP
-
-HexStrike AI dijalankan sebagai MCP server on-demand, bukan service runit.
-
-### 1. Start server
-
-Opsi A — activate venv:
-
-```sh
-cd /opt/gh0st-pi/tools/hexstrike-ai
-source hexstrike-env/bin/activate
-python3 hexstrike_server.py --port 8888
-```
-
-Opsi B — panggil interpreter venv langsung:
-
-```sh
-/opt/gh0st-pi/tools/hexstrike-ai/hexstrike-env/bin/python \
-  /opt/gh0st-pi/tools/hexstrike-ai/hexstrike_server.py \
-  --port 8888
-```
-
-Debug:
-
-```sh
-python3 hexstrike_server.py --port 8888 --debug
-```
-
-### 2. Cek health
-
-```sh
-curl -fsS http://127.0.0.1:8888/health
-```
-
-### 3. Hubungkan ke MCP client
-
-Contoh konfigurasi Claude Desktop:
+Peluncur menolak dijalankan sebagai root. Mode debug Flask sengaja dimatikan (debugger Werkzeug = eksekusi kode).
+Konfigurasi klien MCP (klien hanya menyambung ke URL server, tidak butuh bind lain):
 
 ```json
 {
   "mcpServers": {
     "hexstrike-ai": {
       "command": "/opt/gh0st-pi/tools/hexstrike-ai/hexstrike-env/bin/python",
-      "args": [
-        "/opt/gh0st-pi/tools/hexstrike-ai/hexstrike_mcp.py",
-        "--server",
-        "http://localhost:8888"
-      ],
+      "args": ["/opt/gh0st-pi/tools/hexstrike-ai/hexstrike_mcp.py", "--server", "http://localhost:8888"],
       "timeout": 300,
       "disabled": false
     }
@@ -733,527 +259,200 @@ Contoh konfigurasi Claude Desktop:
 }
 ```
 
-Contoh konfigurasi VS Code:
-
-```json
-{
-  "servers": {
-    "hexstrike": {
-      "type": "stdio",
-      "command": "/opt/gh0st-pi/tools/hexstrike-ai/hexstrike-env/bin/python",
-      "args": [
-        "/opt/gh0st-pi/tools/hexstrike-ai/hexstrike_mcp.py",
-        "--server",
-        "http://localhost:8888"
-      ]
-    }
-  }
-}
-```
-
-Agent lain yang mendukung MCP seperti Cursor, Roo Code, 5ire, dll. dapat dikonfigurasi serupa.
-
-### 4. Catatan integrasi Pi
-
-README HexStrike AI tidak secara eksplisit menjamin integrasi langsung ke Pi. Menyambungkan HexStrike ke Pi memerlukan registrasi MCP manual di sisi Pi dan bergantung pada dukungan client tersebut.
-
-Jangan berasumsi `pi` otomatis melihat tool HexStrike hanya karena server HexStrike berjalan.
-
-### 5. Tool eksternal HexStrike
-
-HexStrike MCP menyediakan wrapper terhadap banyak tool keamanan, tetapi tool eksternalnya tidak dipasang otomatis.
-
-Contoh subset yang mungkin kamu butuhkan:
-
-```sh
-sudo xbps-install -S nmap masscan gobuster ffuf sqlmap nikto hydra john hashcat radare2 binwalk
-```
-
-Namun:
-
-- Verifikasi nama paket di repository T4n OS / Void Linux
-- Hanya install tool yang kamu pahami
-- Hanya gunakan pada target berizin
-
-### 6. Browser agent
-
-Browser agent HexStrike membutuhkan Chromium/Chrome dan driver terkait. Ini tidak dipasang otomatis karena berat dan opsional.
-
-## Upgrade ke Multi-Model / llama-swap
-
-Secara default service berjalan single-model.
-
-Jika kamu ingin multi-model routing atau swap, baca dokumentasi upstream terlebih dahulu:
-
-- llama.cpp
-- pi-llama-cpp
-- llama-swap
-
-Format `presets.ini` dan konfigurasi llama-swap dapat berubah antar versi.
-
-### Konsep upgrade
-
-Edit `/etc/sv/llama/run`, ganti bagian:
-
-```sh
---model $LLAMA_MODELS/$DEFAULT_MODEL_FILE
-```
-
-menjadi mode router, misalnya:
-
-```sh
---models-preset $LLAMA_MODELS/presets.ini
-```
-
-Tambahkan jika ingin model idle dilepas dari RAM:
-
-```sh
---sleep-idle-seconds 300
-```
-
-Contoh fragment:
-
-```sh
-exec $LLAMA_BIN serve \
-  --models-preset /opt/gh0st-pi/models/presets.ini \
-  --host 127.0.0.1 \
-  --port 8080 \
-  --ctx-size 16384 \
-  --n-gpu-layers 0 \
-  --sleep-idle-seconds 300
-```
-
-Lalu restart:
-
-```sh
-sudo sv restart llama
-```
-
-> Penting: di mesin 16 GB, sleep/unload model idle sangat disarankan agar RAM tidak penuh.
-
-## Tata Letak Penyimpanan SSD / HDD
-
-Skrip menempatkan artefak berat di `/opt`.
-
-### Pindahkan model GGUF ke HDD
-
-Jika SSD 256 GB sesak, model adalah kandidat pertama untuk dipindah ke HDD, karena model umumnya dibaca saat load, bukan dieksekusi berulang seperti binary.
-
-Saat instalasi:
-
-```sh
-sudo env LLAMA_MODELS=/mnt/hdd/gh0st-models ./setup.sh
-```
-
-Atau manual setelah instalasi:
-
-1. Pindahkan file model ke HDD
-2. Edit `/etc/sv/llama/run`
-3. Edit rc user yang berisi `LLAMA_MODELS`
-4. Restart service:
-
-```sh
-sudo sv restart llama
-```
-
-### Pindahkan konfigurasi Pi ke SSD
-
-Direktori `~/.pi` bisa membesar saat coding/RE intensif.
-
-Backup dulu, lalu:
-
-```sh
-mv ~/.pi /opt/gh0st-pi/pi
-ln -s /opt/gh0st-pi/pi ~/.pi
-```
-
-Lakukan saat Pi tidak berjalan.
-
-Risiko:
-
-- Jika `/opt` tidak termount atau permission salah, Pi bisa rusak
-- Pastikan mount SSD stabil
-
-### Pindahkan npm cache ke SSD
-
-Digunakan oleh:
-
-```sh
-npx rea-agents
-pi install npm:...
-```
-
-Perintah:
-
-```sh
-npm config set cache /opt/gh0st-pi/npm-cache
-```
-
-## Troubleshooting
-
-### Service llama tidak ready
-
-Cek status:
-
-```sh
-sudo sv status llama
-```
-
-Cek log:
-
-```sh
-sudo sv log llama
-```
-
-Kemungkinan penyebab:
-
-- Model default belum terunduh
-- Nama file model salah
-- Disk penuh
-- Backend tidak cocok dengan mesin
-- Binari llama tidak bisa dieksekusi karena linking/library
-
-Cek model:
-
-```sh
-ls -lh /opt/gh0st-pi/models
-```
-
-Pastikan file default ada:
-
-```text
-Qwen2.5-Coder-7B-Instruct-Q4_K_M.gguf
-```
-
-### `/health` 200 tapi Pi tidak melihat model
-
-Gerbang sebenarnya untuk pilar `[1]` adalah:
-
-```sh
-curl -fsS http://127.0.0.1:8080/v1/models
-```
-
-Respons harus mengandung `"data"`.
-
-Jika `/health`返回 200 tetapi `/v1/models` tidak mengembalikan daftar model, kemungkinan binari `llama serve` tidak kompatibel dengan API yang diharapkan `pi-llama-cpp`.
-
-Solusi: gunakan fallback build `llama-server` dari source.
-
-### Fallback build llama-server dari source
-
-Ini adalah satu-satunya jalur yang secara eksplisit membutuhkan toolchain C++.
-
-```sh
-sudo xbps-install -S cmake make gcc
-
-git clone --depth 1 https://github.com/ggml-org/llama.cpp /opt/llama/src
-cd /opt/llama/src
-
-cmake -B build \
-  -DCMAKE_BUILD_TYPE=Release \
-  -DCMAKE_INSTALL_PREFIX=/opt/llama
-
-cmake --build build -j"$(nproc)"
-cmake --install build
-```
-
-Lalu edit `/etc/sv/llama/run` agar memakai:
-
-```sh
-/opt/llama/bin/llama-server
-```
-
-Contoh:
-
-```sh
-exec /opt/llama/bin/llama-server \
-  --model /opt/gh0st-pi/models/Qwen2.5-Coder-7B-Instruct-Q4_K_M.gguf \
-  --host 127.0.0.1 \
-  --port 8080 \
-  --ctx-size 16384 \
-  --n-gpu-layers 0
-```
-
-Restart:
-
-```sh
-sudo sv restart llama
-```
-
-Catatan penting:
-
-- `llama-server` dijalankan langsung
-- Jangan tambahkan subcommand `serve` jika menggunakan binary `llama-server` hasil build source
-- Binary `llama` dari installer resmi tetap bisa dipakai untuk CLI manual/pilar lain
-
-### HexStrike pip install gagal build C-extension
-
-Penyebab umum:
-
-- Kurang `python3-devel`
-- Kurang compiler
-- Kurang header libffi/openssl/etc.
-- Versi Python tidak cocok
-- Jaringan terputus saat download wheel/source
-
-Coba instal dependensi build setelah memverifikasi nama paket di repo T4n OS / Void:
-
-```sh
-sudo xbps-install -S python3-devel gcc libffi-devel
-```
-
-Lalu ulangi install requirements di venv HexStrike:
-
-```sh
-/opt/gh0st-pi/tools/hexstrike-ai/hexstrike-env/bin/pip install -r /opt/gh0st-pi/tools/hexstrike-ai/requirements.txt
-```
-
-> Jangan menebak nama paket. Verifikasi di package index distro kamu.
-
-### Clone HexStrike gagal
-
-Cek:
-
-- Jaringan
-- Akses GitHub
-- URL repo
-- Proxy/DNS
-
-URL default:
-
-```text
-https://github.com/0x4m4/hexstrike-ai.git
-```
-
-Ulangi provisioning:
-
-```sh
-sudo ./setup.sh
-```
-
-### Node.js terlalu tua untuk REA
-
-Skrip akan memberi warning jika Node tidak memenuhi syarat REA.
-
-Upgrade Node sesuai mekanisme distro/T4n OS kamu, lalu jalankan:
-
-```sh
-npx rea-agents setup
-```
-
-### `ps` tidak ditemukan walau procps-ng dipasang
-
-REA di Linux membutuhkan `ps` compatible procps pada PATH untuk cek kepemilikan proses.
-
-Cek:
-
-```sh
-command -v ps
-ps --version
-```
-
-Jika hilang, verifikasi paket `procps-ng` atau nama setara di repo T4n OS.
-
-### Model download gagal
-
-Skrip retry 3x per model. Jika masih gagal, unduh manual.
-
-Contoh:
-
-```sh
-curl -fL -o /opt/gh0st-pi/models/Qwen2.5-Coder-7B-Instruct-Q4_K_M.gguf \
-  https://huggingface.co/unsloth/Qwen2.5-Coder-7B-Instruct-GGUF/resolve/main/Qwen2.5-Coder-7B-Instruct-Q4_K_M.gguf
-```
-
-Lalu restart service:
-
-```sh
-sudo sv restart llama
-```
-
-### Ingin memaksa install ulang llama
-
-```sh
-sudo env FORCE_BUILD=1 ./setup.sh
-```
-
-### Ingin skip installer internal llama
-
-```sh
-sudo env GH0ST_SKIP_INSTALL=1 ./setup.sh
-```
+(VS Code: `servers.hexstrike` dengan `type: "stdio"` dan `command`/`args` yang sama. Cursor, Roo Code, 5ire, dll. serupa.)
 
 Catatan:
 
-- Ini mengatur `SKIP_INSTALL=1` pada installer resmi
-- Skrip tetap membuat symlink `/usr/local/bin/llama`
-- Jika dikombinasikan dengan `LLAMA_VERSION`, upstream mungkin tidak memverifikasi pin secara ketat
+- README HexStrike tidak menjamin integrasi ke Pi. Menyambungkannya ke Pi butuh registrasi MCP manual di sisi Pi; jangan berasumsi `pi` otomatis melihat tool-nya.
+- Tool eksternal tidak dipasang. Contoh subset (verifikasi nama paket di repo): `sudo xbps-install -S nmap masscan gobuster ffuf sqlmap nikto hydra john hashcat radare2 binwalk`. Pasang hanya yang kamu pahami dan berwenang uji.
+- Browser agent butuh Chromium/Chrome + driver; tidak dipasang otomatis.
+- Batasi `alwaysAllow` pada klien MCP.
 
-## Uninstall Manual
+---
 
-Skrip ini tidak menyediakan `uninstall.sh` khusus. Berikut prosedur manual.
+## Multi-model / llama-swap
 
-> Peringatan: perintah di bawah menghapus artefak di `/opt/gh0st-pi`, termasuk model GGUF dan venv HexStrike. Backup dulu jika diperlukan.
+Default: single-model, ganti dengan `gh0st-ai model`. Untuk router multi-model / swap, baca dokumentasi upstream
+(llama.cpp, pi-llama-cpp, llama-swap); format `presets.ini` dan konfigurasi llama-swap **berubah antar versi** dan tidak diuji di sini.
+Garis besar: pada `$SV/run`, ganti argumen `--model "$MODEL"` dengan `--models-preset <file>` dan tambahkan `--sleep-idle-seconds 300`
+agar model idle dilepas dari RAM (sangat disarankan di 16 GB), lalu `gh0st-ai restart`. Skrip `run` akan tertimpa saat `setup.sh` diulang;
+simpan salinannya.
 
-### 1. Stop dan hapus service llama
+---
 
-```sh
-sudo sv stop llama
-sudo rm -f /etc/runit/runsvdir/default/llama
-sudo rm -rf /etc/sv/llama
-```
+## Tata letak penyimpanan SSD / HDD
 
-### 2. Hapus artefak gh0st-pi
-
-```sh
-sudo rm -rf /opt/gh0st-pi
-```
-
-Jika kamu memakai path custom `GH0ST_ROOT`, hapus path tersebut.
-
-### 3. Hapus symlink global
+Semua artefak berat di `/opt` (SSD). Model adalah kandidat pertama untuk dipindah ke HDD (dibaca sekali saat load, bukan dieksekusi berulang).
 
 ```sh
-sudo rm -f /usr/local/bin/llama
-sudo rm -f /usr/local/bin/uv
-sudo rm -f /usr/local/bin/uvx
+sudo env LLAMA_MODELS=/mnt/hdd/gh0st-models sh setup.sh
 ```
 
-Hanya hapus symlink yang memang dibuat oleh skrip.
+Syarat: user `_llama` harus bisa **membaca** foldernya, termasuk semua folder induk (`chmod o+x` pada induk bila perlu).
+Model di dalam `/home` yang tertutup biasanya gagal; setup memeriksanya dan memberi peringatan.
 
-### 4. Bersihkan rc user
-
-Hapus blok dengan marker:
-
-```text
-gh0st-pi-llama-env
-```
-
-dari file:
-
-```text
-~/.bashrc
-~/.zshrc
-~/.config/fish/config.fish
-```
-
-Backup rc biasanya dibuat oleh skrip dengan nama:
-
-Contoh:
-
-```text
-~/.bashrc.gh0stbak.1760000000
-```
-
-### 5. Hapus fallback build llama jika ada
-
-Jika kamu pernah menjalankan fallback source build:
+Opsional (manual, lakukan saat Pi tidak jalan dan backup dulu):
 
 ```sh
-sudo rm -rf /opt/llama
+mv ~/.pi /opt/gh0st-pi/pi && ln -s /opt/gh0st-pi/pi ~/.pi    # risiko: bila /opt tak termount, Pi rusak
+npm config set cache /opt/gh0st-pi/npm-cache                  # cache npm (pi install, npx rea-agents)
 ```
 
-## Keamanan, Etika, dan Legalitas
+---
 
-Stack ini dapat mengakses tool keamanan, binary analysis, web scanning, exploit framework, dan automation agent.
+## Troubleshooting
 
-Gunakan hanya untuk:
+### AI tidak siap / service gagal
 
-- Sistem milik sendiri
-- Penetration testing dengan izin tertulis
-- Bug bounty dalam scope program
-- CTF competition
-- Security research yang sah
-- Red team exercise dengan persetujuan organisasi
-- Interoperability research
-- Software preservation
-- Analisis malware di lingkungan terisolasi
+```sh
+gh0st-ai status
+gh0st-ai log                       # = tail -f /var/log/llama/current
+sudo sv status /etc/sv/llama
+```
 
-Jangan gunakan untuk:
+Setup menampilkan 15 baris terakhir log bila tes nyala gagal. Penyebab umum: model belum terunduh, RAM habis, flag tidak dikenal versi llama terpasang.
 
-- Akses tidak sah
-- Perusakan sistem
-- Pencurian data
-- Serangan terhadap target tanpa izin
-- Aktivitas ilegal lainnya
+### `/health` 200 tapi Pi tidak melihat model
 
-### Rekomendasi operasional
+Gerbang yang benar adalah `curl -fsS http://127.0.0.1:8080/v1/models` (harus mengandung `"data"`). Jika tidak,
+`llama serve` mungkin tidak kompatibel dengan `pi-llama-cpp`. Gunakan fallback build `llama-server`.
 
-- Jalankan di VM terisolasi atau lab khusus
-- Jangan ekspos port `8080` dan `8888` ke jaringan luar
-- Gunakan SSH tunnel jika perlu akses remote
-- Monitor aktivitas AI agent
-- Batasi `alwaysAllow` pada MCP client jika agent mendukung eksekusi otomatis
-- Simpan bukti/hasil scan dengan aman
-- Patuhi rules of engagement dan kebijakan organisasi
+### Fallback: build `llama-server` dari source
 
-## Struktur Direktori
+Satu-satunya jalur yang butuh toolchain C++:
 
-Struktur default:
+```sh
+sudo xbps-install -S cmake make gcc
+git clone --depth 1 https://github.com/ggml-org/llama.cpp /opt/llama/src
+cd /opt/llama/src && cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/opt/llama
+cmake --build build -j"$(nproc)" && sudo cmake --install build
+```
+
+Lalu di `/etc/sv/llama/conf` ubah dua baris (llama-server dipanggil **tanpa** subcommand `serve`), dan restart:
+
+```sh
+LLAMA_BIN='/opt/llama/bin/llama-server'
+SERVE_SUBCMD=''
+```
+
+`EXTRA_FLAGS` hasil deteksi dibuat dari `llama serve --help`; sesuaikan dengan `llama-server --help` bila ada flag yang tak dikenal.
+Pastikan `/opt/llama` milik root (`sudo chown -R root:root /opt/llama`).
+
+### Binari llama 0 byte / rusak
+
+Installer resmi punya laporan bug yang bisa menghasilkan binari 0 byte tanpa error, terutama tanpa `zstd`. Skrip menolak binari < 1 MB.
+Pasang `sudo xbps-install -S zstd`, lalu `sudo env GH0ST_REINSTALL=1 sh setup.sh`.
+
+### Model tidak bisa dibaca `_llama`
+
+Folder model (atau induknya) tertutup untuk user lain. Pindahkan ke `/opt/gh0st-pi/models` atau beri izin telusur pada folder induk.
+
+### Unduhan model gagal
+
+Jalankan ulang `sudo sh setup.sh`: unduhan yang terputus **dilanjutkan** (`curl -C -`), file yang gagal verifikasi (header/SHA256) diunduh ulang.
+Bila SHA256 resmi tak tersedia dari server, hanya header GGUF yang dicek (ada peringatan). Unduh manual: `curl -fL -C - -o <file> <url>`.
+
+### HexStrike
+
+- *clone/fetch gagal*: cek jaringan dan `REPO_HEX`; ulangi `sudo sh setup.sh`. Checkout ke `HEX_REF` yang tak ada akan ditolak.
+- *pip gagal*: skrip mencoba lagi setelah memasang `python3-devel gcc libffi-devel`. Manual: `<venv>/bin/pip install -r <dir>/requirements.txt`. Verifikasi nama paket di repo distro.
+- Memperbarui ke commit lain: `sudo env HEX_REF=<sha> sh setup.sh` setelah **meninjau** perubahannya.
+
+### Node terlalu tua / `ps` tidak ada
+
+Pi butuh Node >= 22.19 (REA punya daftar sendiri). Upgrade nodejs, lalu jalankan ulang setup. Untuk REA cek `command -v ps` dan paket `procps-ng`.
+
+### `pi: command not found`
+
+Buka terminal baru. Cek `ls -l /usr/local/bin/pi` dan `~/.local/bin/pi`. Pasang manual sebagai user: `npm install -g --prefix ~/.local @earendil-works/pi-coding-agent@1.3.0`.
+Paket lama `@mariozechner/pi-coding-agent` sudah deprecated dan tidak kompatibel dengan `pi-llama-cpp` terbaru.
+
+### Memaksa pasang ulang / melewati installer
+
+```sh
+sudo env GH0ST_REINSTALL=1 sh setup.sh      # pasang ulang llama
+sudo env GH0ST_SKIP_INSTALL=1 sh setup.sh   # SKIP_INSTALL=1 ke installer resmi
+```
+
+Dengan `SKIP_INSTALL` + `LLAMA_VERSION`, upstream tidak memverifikasi pin secara ketat.
+
+---
+
+## Uninstall
+
+```sh
+sudo sh uninstall.sh --dry-run          # lihat dulu, tidak mengubah apa pun
+sudo sh uninstall.sh                    # default: model dihapus, workspace disimpan
+sudo sh uninstall.sh --keep-models -y
+sudo sh uninstall.sh --purge-all -y     # hapus seluruh /opt/gh0st-pi dan /opt/llama
+```
+
+Lokasi dibaca dari `/opt/gh0st-pi/.gh0st-pi-state` (milik root), jadi path custom (mis. model di HDD) ikut dibersihkan, dan **hanya file model yang dikenal** dihapus, bukan seluruh folder.
+Yang dilakukan: matikan dan lepas service (urutan benar: matikan, lepas link, tunggu, hapus direktori), hapus user `_llama` + state + log, hapus `gh0st-ai`/`gh0st-hexstrike`,
+bersihkan env block (hanya baris milik gh0st-pi; baris lain di rc aman), hapus llama/uv/HexStrike/cache.
+**Tidak** dihapus: Pi dan `/usr/local/bin/pi`, `~/.pi`, tool eksternal, workspace (kecuali `--purge-workspace`/`--purge-all`).
+Lepas ekstensi Pi: `--try-pi-uninstall`. Hapus Pi: `npm uninstall -g --prefix ~/.local @earendil-works/pi-coding-agent`.
+
+`install.sh` (varian Ollama) tidak punya uninstaller; langkah manual: `sudo sv down /etc/sv/ollama; sudo rm -f /etc/runit/runsvdir/default/ollama; sleep 6; sudo rm -rf /etc/sv/ollama /opt/ollama /var/lib/ollama /var/log/ollama; sudo userdel _ollama`,
+lalu hapus blok `# ollama-env` dari rc.
+
+---
+
+## Keamanan, etika, legalitas
+
+Stack ini dapat mengakses tool keamanan, analisis binary, pemindaian web, framework exploit, dan agent otomatis.
+
+Gunakan hanya untuk: sistem milik sendiri; pentest dengan izin tertulis; bug bounty dalam scope; CTF; riset keamanan yang sah;
+red team dengan persetujuan organisasi; interoperabilitas; pelestarian software; analisis malware di lingkungan terisolasi.
+Jangan untuk akses tidak sah, perusakan, pencurian data, atau serangan tanpa izin.
+
+Rekomendasi operasional:
+
+- Analisis sampel tak tepercaya di VM/lab terpisah, **tanpa** akses ke `~/.ssh` dan kredensial. String di dalam binary/dokumen bisa berisi instruksi yang dibaca agent (prompt injection).
+- Jangan auto-approve perintah `bash` dari agent. Model 4B-8B sering mengarang offset/alamat/nama fungsi; verifikasi dengan tool.
+- Jangan ekspos port `8080` dan `8888` ke jaringan luar. Remote: SSH tunnel.
+- llama tanpa `--api-key`: situs web di browser lokal pada prinsipnya bisa memanggil `127.0.0.1:8080`. Server hanya menghasilkan teks (tanpa akses file/shell), tetapi tutup tab asing saat AI menyala.
+- Pasang ekstensi Pi hanya setelah ditinjau; ekstensi berjalan dengan hak penuh user kamu.
+- Simpan bukti/hasil scan dengan aman; patuhi rules of engagement.
+
+---
+
+## Struktur direktori
 
 ```text
-/opt/gh0st-pi/
-├── llama/
-│   └── .llama-app/
-│       └── llama
-├── models/
-│   ├── Qwen2.5-Coder-7B-Instruct-Q4_K_M.gguf
-│   ├── Qwen2.5-Coder-3B-Instruct-Q4_K_M.gguf
-│   ├── Qwen3-8B-Q4_K_M.gguf
-│   └── Qwen3-4B-Q4_K_M.gguf
-├── uv/
-│   └── bin/
-│       ├── uv
-│       └── uvx
+repo/
+├── setup.sh                  # entry point
+├── uninstall.sh
+├── install.sh                # varian Ollama (terpisah, service non-root)
+├── PANDUAN.md                # panduan pemula
+├── bin/
+│   ├── gh0st-ai              # template; dipasang ke $BIN_DIR
+│   ├── gh0st-hexstrike       # template; dipasang ke $BIN_DIR
+│   └── hexstrike_local.py    # peluncur HexStrike khusus 127.0.0.1
+└── src/                      # common config preflight gpu deps llama models env uv service helpers pi hexstrike finalize
+
+/opt/gh0st-pi/                # milik root
+├── .gh0st-pi-state           # lokasi terpasang (dibaca uninstall.sh)
+├── llama/bin/llama           # milik root
+├── models/*.gguf
+├── uv/bin/                   # opsional
 ├── tools/
-│   └── hexstrike-ai/
-│       ├── hexstrike_server.py
-│       ├── hexstrike_mcp.py
-│       ├── requirements.txt
-│       └── hexstrike-env/
-└── workspace/
+│   ├── hexstrike_local.py    # milik root
+│   └── hexstrike-ai/         # source + hexstrike-env (milik user)
+├── .cache/pip                # milik user
+└── workspace/                # milik user
+
+/etc/sv/llama/{run,conf,down,log/run}    # milik root
+/var/log/llama/current                   # log service
+/var/lib/llama/                          # HOME user _llama
+~/.local/bin/pi  (+ symlink /usr/local/bin/pi)
 ```
 
-Service runit:
+---
 
-```text
-/etc/sv/llama/
-└── run
-```
+## Kredit dan lisensi
 
-Symlink service:
+Berdiri di atas: T4n OS, Void Linux, runit, XBPS, llama.cpp, installer llama.app, Pi coding agent, pi-llama-cpp, REA / morluto,
+HexStrike AI, Astral uv, Hugging Face, Unsloth GGUF, serta seluruh maintainer paket dan tool keamanan yang dipakai secara terpisah.
 
-```text
-/etc/runit/runsvdir/default/llama -> /etc/sv/llama
-```
-
-Global symlink:
-
-```text
-/usr/local/bin/llama
-/usr/local/bin/uv
-/usr/local/bin/uvx
-```
-
-## Kredit
-
-Projek ini berdiri di atas banyak upstream , antara lain:
-
-- T4n OS
-- Void Linux
-- runit
-- XBPS
-- llama.cpp
-- llama.app installer
-- Pi coding agent
-- pi-llama-cpp
-- REA / morluto
-- HexStrike AI
-- Astral uv
-- Hugging Face
-- Unsloth model GGUF
-- Seluruh maintainer paket dan tool keamanan yang digunakan secara terpisah
-
-## Lisensi
-
-[MIT](LICENSE) - Proyek Lainnya, mengikuti Lisensi Masing-Masing
+Lisensi: lihat [LICENSE](LICENSE).
