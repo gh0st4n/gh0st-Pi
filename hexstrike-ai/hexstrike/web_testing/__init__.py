@@ -1,0 +1,3 @@
+from hexstrike.web_testing.http_framework import HTTPTestingFramework, http_framework
+from hexstrike.web_testing.browser_agent import BrowserAgent, browser_agent
+from hexstrike.web_testing.payload_generator import AIPayloadGenerator, ai_payload_generator

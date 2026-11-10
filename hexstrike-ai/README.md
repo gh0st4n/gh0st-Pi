@@ -1,19 +1,7 @@
 <div align="center">
 
-<img src="assets/hexstrike-logo.png" alt="HexStrike AI Logo" width="220" style="margin-bottom: 20px;"/>
-
 # HexStrike AI MCP Agents v6.0
 ### AI-Powered MCP Cybersecurity Automation Platform
-
-[![Python](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://www.python.org/)
-[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Security](https://img.shields.io/badge/Security-Penetration%20Testing-red.svg)](https://github.com/0x4m4/hexstrike-ai)
-[![MCP](https://img.shields.io/badge/MCP-Compatible-purple.svg)](https://github.com/0x4m4/hexstrike-ai)
-[![Version](https://img.shields.io/badge/Version-6.0.0-orange.svg)](https://github.com/0x4m4/hexstrike-ai/releases)
-[![Tools](https://img.shields.io/badge/Security%20Tools-150%2B-brightgreen.svg)](https://github.com/0x4m4/hexstrike-ai)
-[![Agents](https://img.shields.io/badge/AI%20Agents-12%2B-purple.svg)](https://github.com/0x4m4/hexstrike-ai)
-[![Stars](https://img.shields.io/github/stars/0x4m4/hexstrike-ai?style=social)](https://github.com/0x4m4/hexstrike-ai)
-
 **Advanced AI-powered penetration testing MCP framework with 150+ security tools and 12+ autonomous AI agents**
 
 **Owned & developed by [OTT Cybersecurity LLC](https://overthetop.ae/)**
@@ -41,6 +29,112 @@
 
 
 </div>
+
+---
+## Tree Project
+
+```txt
+hexstrike-ai/
+├── hexstrike_server.py              # Entry point (tipis, ~30 baris)
+├── hexstrike_mcp.py                 # Entry point (tipis, ~30 baris)
+├── requirements.txt
+├── hexstrike-ai-mcp.json
+│
+├── hexstrike/                       # Main package
+│   ├── __init__.py
+│   ├── config.py
+│   │
+│   ├── core/
+│   │   ├── __init__.py
+│   │   ├── colors.py               # Semua definisi warna
+│   │   ├── visual_engine.py        # ModernVisualEngine
+│   │   ├── logging.py              # ColoredFormatter + setup
+│   │   ├── cache.py                # HexStrikeCache + AdvancedCache
+│   │   ├── telemetry.py            # TelemetryCollector
+│   │   ├── executor.py             # EnhancedCommandExecutor
+│   │   └── process_manager.py      # ProcessManager
+│   │
+│   ├── intelligence/
+│   │   ├── __init__.py
+│   │   ├── models.py               # TargetType, TechnologyStack, TargetProfile, AttackChain
+│   │   ├── decision_engine.py      # IntelligentDecisionEngine
+│   │   ├── parameter_optimizer.py  # ParameterOptimizer
+│   │   ├── technology_detector.py  # TechnologyDetector
+│   │   └── rate_limiter.py         # RateLimitDetector
+│   │
+│   ├── error_handling/
+│   │   ├── __init__.py
+│   │   ├── models.py               # ErrorType, RecoveryAction, ErrorContext
+│   │   ├── handler.py              # IntelligentErrorHandler
+│   │   ├── recovery.py             # execute_command_with_recovery
+│   │   └── degradation.py          # GracefulDegradation
+│   │
+│   ├── workflows/
+│   │   ├── __init__.py
+│   │   ├── bugbounty.py            # BugBountyWorkflowManager + FileUploadTestingFramework
+│   │   ├── ctf_manager.py          # CTFWorkflowManager
+│   │   ├── ctf_tools.py            # CTFToolManager
+│   │   ├── ctf_automation.py       # CTFChallengeAutomator
+│   │   └── ctf_team.py             # CTFTeamCoordinator
+│   │
+│   ├── vuln_intel/
+│   │   ├── __init__.py
+│   │   ├── cve_manager.py          # CVEIntelligenceManager
+│   │   ├── exploit_generator.py    # AIExploitGenerator
+│   │   └── correlator.py           # VulnerabilityCorrelator
+│   │
+│   ├── web_testing/
+│   │   ├── __init__.py
+│   │   ├── http_framework.py       # HTTPTestingFramework
+│   │   ├── browser_agent.py        # BrowserAgent
+│   │   └── payload_generator.py    # AIPayloadGenerator
+│   │
+│   ├── infrastructure/
+│   │   ├── __init__.py
+│   │   ├── process_pool.py         # ProcessPool
+│   │   ├── resource_monitor.py     # ResourceMonitor
+│   │   ├── performance.py          # PerformanceDashboard + PerformanceMonitor
+│   │   ├── enhanced_manager.py     # EnhancedProcessManager
+│   │   └── env_manager.py          # PythonEnvironmentManager
+│   │
+│   ├── utils/
+│   │   ├── __init__.py
+│   │   └── file_ops.py             # FileOperationsManager
+│   │
+│   ├── api/                         # Flask Blueprints
+│   │   ├── __init__.py
+│   │   ├── app.py                  # create_app()
+│   │   ├── health.py
+│   │   ├── command.py
+│   │   ├── files.py
+│   │   ├── tools_network.py
+│   │   ├── tools_web.py
+│   │   ├── tools_binary.py
+│   │   ├── tools_cloud.py
+│   │   ├── tools_forensics.py
+│   │   ├── intelligence.py
+│   │   ├── bugbounty.py
+│   │   ├── ctf.py
+│   │   ├── vuln_intel.py
+│   │   ├── process_mgmt.py
+│   │   ├── visual.py
+│   │   └── error_handling.py
+│   │
+│   └── mcp/                         # MCP Client modules
+│       ├── __init__.py
+│       ├── client.py               # HexStrikeClient
+│       ├── server.py               # setup_mcp_server()
+│       ├── tools_network.py
+│       ├── tools_web.py
+│       ├── tools_binary.py
+│       ├── tools_cloud.py
+│       ├── tools_forensics.py
+│       ├── tools_intelligence.py
+│       ├── tools_bugbounty.py
+│       ├── tools_process.py
+│       ├── tools_visual.py
+│       └── tools_vuln_intel.py
+```
 
 ---
 
