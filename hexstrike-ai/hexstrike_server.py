@@ -19,7 +19,8 @@ def main():
     print(ModernVisualEngine.create_banner())
 
     app = create_app(debug=args.debug)
-    app.run(host="0.0.0.0", port=args.port, debug=args.debug)
+    # JANGAN "0.0.0.0": /api/command menjalankan perintah shell tanpa autentikasi. Default API_HOST = 127.0.0.1.
+    app.run(host=API_HOST, port=args.port, debug=args.debug)
 
 if __name__ == "__main__":
     main()

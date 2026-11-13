@@ -1,0 +1,6 @@
+# Pemangkasan yang SENGAJA terhadap HexStrike upstream. Format:  route <path>  |  tool <nama>   # alasan
+# Entri yang ada di sini tidak dilaporkan sebagai "belum ada" oleh scripts/parity_check.py.
+#
+# contoh:
+# route /api/python/execute        # sengaja dihapus: eksekusi kode Python bebas tidak aman
+# tool  execute_python_script      # idem

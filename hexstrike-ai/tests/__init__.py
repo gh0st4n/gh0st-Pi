@@ -1,0 +1,3 @@
+"""
+HexStrike AI test package.
+"""

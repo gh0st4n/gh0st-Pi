@@ -1,5 +1,4 @@
 #!/bin/sh
-#!/bin/sh
 # gh0st-pi-managed  (penanda utk uninstall.sh; jangan dihapus)
 #
 # gh0st-ai - kendali sederhana utk AI lokal milik gh0st-pi.
@@ -215,4 +214,3 @@ case "$cmd" in
   log)     exec tail -n 60 -f "$LOGDIR/current" ;;
   *)       usage; exit 1 ;;
 esac
-

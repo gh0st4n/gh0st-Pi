@@ -98,6 +98,11 @@ siapa pun di WiFi/LAN yang sama dapat menjalankan perintah sebagai user kamu. Ka
 peluncur yang mengimpor `app` lalu menjalankannya dengan `host="127.0.0.1"` dan `debug=False`, tanpa mengubah source upstream.
 **Jangan menjalankan `hexstrike_server.py` langsung.**
 
+Peluncur mendukung dua layout: versi satu-file upstream (objek `app` di `hexstrike_server.py`) dan refactor modular
+(`hexstrike/api/app.py` dengan factory `create_app()`). Refactor modular yang diperiksa memiliki bind `0.0.0.0` yang sama
+dan `/api/command` yang sama tanpa autentikasi, jadi peluncur tetap wajib. Untuk memakai versi modular milik sendiri:
+`sudo env REPO_HEX=<url-repo> HEX_REF=<sha> sh setup.sh`.
+
 ---
 
 ## Prasyarat

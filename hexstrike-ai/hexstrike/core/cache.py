@@ -136,3 +136,6 @@ class AdvancedCache:
                 "miss_count": self.miss_count,
                 "hit_rate": (self.hit_count / total * 100) if total > 0 else 0,
             }
+
+# Singleton global (upstream: cache = HexStrikeCache()); dibutuhkan oleh hexstrike/core/__init__.py
+cache = HexStrikeCache()
